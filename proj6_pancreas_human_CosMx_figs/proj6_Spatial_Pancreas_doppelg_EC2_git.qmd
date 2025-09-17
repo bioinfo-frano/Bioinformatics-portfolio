@@ -1,0 +1,1430 @@
+---
+title: "Spatial transcriptomics analysis of FFPE pancreas of human"
+author: "Frano Malinarich G"
+Company: "Doppelganger Biosystem GmbH"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true      
+    toc-depth: 4   
+    number-sections: true  
+    fig-width: 8    
+    fig-height: 6   
+    code-fold: true 
+    code-download: true 
+    css: 
+      - styles.css       
+editor: visual
+---
+
+# **Spatial transcriptomics analysis of human FFPE pancreas sample**
+
+### Author of the analysis: *Frano Malinarich G. Ph.D.*
+
+## Overall description
+
+<https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-human-pancreas-ffpe-dataset/>
+
+"With CosMx™ Spatial Molecular Imager (SMI) we characterized human pancreas FFPE tissue with a 18,946 plex pre-commercial version of our CosMx Human Whole Transcriptome panel. 
+This pre-commercial whole transcriptome panel showcases the highest plex of any spatial imager. 
+With over 18,946 genes, this RNA panel offers researchers the ability to analyze the entire transcriptome at true single cell level at the highest plex." 
+
+## Specific description (See Table)
+
+| Parameter                                         | Value                                                  |
+|----------------------------------|--------------------------------------|
+| Tissue Type                                       | Pancreas                                               |
+| Panel                                             | Pre-commercial WTx RNA panel containing 18,946 targets |
+| Scan Area                                         | 4.695 mm²                                              |
+| Total Cells                                       | 48951                                                  |
+| \% Cells Passing QC                               | 96.6%                                                  |
+| Total transcripts detected                        | 64960677                                               |
+| \% of transcripts assigned to a cell              | 91%                                                    |
+| Sensitivity (Mean transcripts/cell)               | 1214                                                   |
+| Sensitivity (Mean transcripts per µm3)            | 3.06                                                   |
+| Genomic breadth (Mean unique genes per cell)      | 479                                                    |
+| Genomic breadth (Unique genes detected above LOD) | 6710                                                   |
+| Mean negatives / Plex / cell                      | 0,011                                                  |
+| Mean SystemControl / Plex / cell                  | 0,005                                                  |
+
+## Platforms:
+
+-   CosMx SMI (Spatial Molecular Imager) Technology
+
+## Aims
+
+0.  Connect AWS-EC2 instance to local computer.
+1.  Import CosMx dataset into AWS-EC2 and and decompress it
+2.  Load the CosMx dataset into RStudio Server (continue by creating seurat object, preprocessing, etc).
+3.  Visualizations: UMAP and tissue/cell type characterization
+4.  Tabular visualization of exportable file
+5.  Convert seurat object metadata in H5AD
+
+## *Activate packages*
+
+```{r}
+# Load/install packages
+
+if (!requireNamespace("pacman")) {
+  install.packages("pacman")
+}
+pacman::p_load(conflicted, dplyr, tibble, Seurat,
+               patchwork, ggplot2, ggrepel, stringr, 
+               gridExtra, tidyr, flextable,
+               officer, rmarkdown, R.utils,
+               here, webshot2, harmony, future
+               )
+
+
+# Resolve conflicts
+conflict_prefer("filter", "dplyr")
+conflict_prefer("combine", "dplyr")
+conflict_prefer("setdiff", "base")  # Specify base::setdiff to avoid errors
+conflict_prefer("rename", "dplyr")
+conflict_prefer("width", "flextable")  # For table formatting
+conflict_prefer("select", "dplyr")
+conflict_prefer("arrange", "dplyr")
+conflict_prefer("count", "dplyr")
+conflict_prefer("slice", "dplyr")
+conflict_prefer("Assays", "Seurat")
+
+library(cowplot) # For plot arrangement
+library(SpatialExperiment)
+library(Matrix)
+library(SeuratWrappers)
+library(reticulate)
+library(future)
+library(pagedown)
+library(sf)   # for handling polygons
+library(data.table)
+library(glmGamPoi)
+packageVersion("glmGamPoi") # Should be 1.12.0 or higher
+
+```
+
+## *Load spatial data and QC*
+
+```{r}
+
+# Steps
+
+# Load Nanostring CosMx dataset (Pancreas) and save seurat object
+nano.obj <- LoadNanostring(
+  data.dir = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/RData",
+  fov = "Pancreas",
+  assay = "Nanostring"
+)
+
+nano.obj
+
+# An object of class Seurat 
+# 21731 features across 48944 samples within 1 assay 
+# Active assay: Nanostring (21731 features, 0 variable features)
+#  1 layer present: counts
+#  1 spatial field of view present: Pancreas
+
+# Save object
+# saveRDS(
+#   nano.obj,
+#   file = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_pancreas.rds")
+
+
+# Checking whether the seurat object has Spatial coordinates incorporated
+names(nano.obj@images)
+
+slotNames(nano.obj@images[["Pancreas"]])
+
+head(nano.obj@images[["Pancreas"]]@boundaries$centroids)
+head(nano.obj@images[["Pancreas"]]@boundaries$centroids@cells)
+# head(nano.obj@images[["Pancreas"]]@boundaries$centroids@nsides)
+# head(nano.obj@images[["Pancreas"]]@boundaries$centroids@radius)
+# head(nano.obj@images[["Pancreas"]]@boundaries$centroids@theta)
+head(nano.obj@images[["Pancreas"]]@boundaries$centroids@coords)
+# head(nano.obj@images[["Pancreas"]]@boundaries$centroids@bbox)
+# head(nano.obj@images[["Pancreas"]]@boundaries$centroids@proj4string)
+
+head(nano.obj@images[["Pancreas"]]@boundaries$segmentation)
+head(nano.obj@images[["Pancreas"]]@boundaries$segmentation@polygons)
+# head(nano.obj@images[["Pancreas"]]@boundaries$segmentation@plotOrder)
+# head(nano.obj@images[["Pancreas"]]@boundaries$segmentation@bbox)
+# head(nano.obj@images[["Pancreas"]]@boundaries$segmentation@proj4string)
+
+# head(GetTissueCoordinates(nano.obj), 3) # THIS IS FOR 10X VISIUM!!!
+
+# str(nano.obj@images[["F058"]]@coordinates) # WRONG! It has to be "Pancreas"
+
+view(nano.obj@meta.data)
+
+# Conclusion: the seurat object, according to slot "boundaries" has all the spatial coordinates.
+
+# Read seurat object
+# nano.obj <- readRDS("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_pancreas.rds")
+
+# ---------------------------------- QC ---------------------------------- 
+
+# # Add mitochondrial % (CosMx may use human symbols, e.g., MT-CO1, MT-ND1)
+nano.obj[["percent.mt"]] <- PercentageFeatureSet(nano.obj, pattern = "^MT-")
+
+# # Add ribosomal % (for human symbols: RPL*, RPS*)
+nano.obj[["percent.rb"]] <- PercentageFeatureSet(nano.obj, pattern = "^RP[SL]")
+
+head(nano.obj@meta.data, 4)
+
+# Violin plot QC
+VlnPlot(nano.obj, features = c("nCount_Nanostring", "nFeature_Nanostring",
+                               "percent.mt", "percent.rb"), pt.size = 0.1) + NoLegend()
+
+# Scatter QC
+FeatureScatter(nano.obj, feature1 = "percent.rb", feature2 = "nCount_Nanostring") +
+FeatureScatter(nano.obj, feature1 = "percent.mt", feature2 = "nCount_Nanostring")
+
+# Summary statistics
+summary(nano.obj@meta.data[, c("nFeature_Nanostring", "nCount_Nanostring", "percent.mt", "percent.rb")])
+
+
+# Save object
+# saveRDS(
+#   nano.obj,
+#   file = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_QC.rds")
+
+
+```
+
+## *Data pre-processing: Data cleaning & Preprocessing: SCTransfomation - FindVariableFeatures*
+
+```{r}
+
+# Read seurat object
+# nano.obj <- readRDS("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_QC.rds")
+
+nano.obj
+# An object of class Seurat
+# 21731 features across 48944 samples within 1 assay
+# Active assay: Nanostring (21731 features, 0 variable features)
+#  1 layer present: counts
+#  1 spatial field of view present: Pancreas
+
+# Assays(nano.obj) # "Nanostring"
+
+# ---------------------------- Cleaning: identifying/removal of synthetic genes ----------------------------
+
+# The purpose of cleaning is to identify and remove all synthetic genes, which are often artificial spike-ins or placeholder features from imaging pipelines (e.g., CosMx/NanoString) and shouldn't be considered in biological interpretation or downstream analysis. 
+
+possible_patterns <- c("SystemControl", "NegPrb", "PosPrb", "Blank", "Housekeeping", "ERCC")
+
+for (pattern in possible_patterns) {
+  hits <- grep(pattern, rownames(nano.obj), ignore.case = TRUE, value = TRUE)
+  if (length(hits) > 0) {
+    cat(sprintf("Found %d genes matching '%s'\n", length(hits), pattern))
+    print(head(hits, 5))
+  } else {
+    cat(sprintf("No genes matching '%s'\n", pattern))
+  }
+}
+
+# Identify SystemControl genes only (synthetic controls to remove)
+control_genes <- grep("^SystemControl", rownames(nano.obj), ignore.case = TRUE, value = TRUE)
+
+# Remove from all assays
+nano.obj_clean <- nano.obj
+for(assay_name in Assays(nano.obj)) {
+  # Get current features
+  all_features <- rownames(GetAssayData(nano.obj, assay = assay_name))
+
+  # Filter out control genes
+  keep_features <- setdiff(all_features, control_genes)
+
+  # Subset the assay
+  nano.obj_clean[[assay_name]] <- subset(nano.obj[[assay_name]], features = keep_features)
+}
+
+# Verify removal
+cat("Original gene count:", nrow(GetAssayData(nano.obj, assay = "Nanostring")), "\n")
+cat("Cleaned gene count:", nrow(GetAssayData(nano.obj_clean, assay = "Nanostring")), "\n")
+cat("Control genes still present:", length(base::intersect(rownames(GetAssayData(nano.obj_clean, assay = "Nanostring")), control_genes)), "\n")
+
+
+nano.obj_clean
+# An object of class Seurat 
+# 18996 features across 48944 samples within 1 assay 
+# Active assay: Nanostring (18996 features, 0 variable features)
+#  1 layer present: counts
+#  1 spatial field of view present: Pancreas
+
+# Save
+# saveRDS(
+#   nano.obj_clean,
+#   file = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_clean.rds")
+
+
+# ---------------------------- Preprocessing ----------------------------
+
+# Read seurat object
+# nano.obj <- readRDS("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_clean.rds")
+
+nano.obj
+# An object of class Seurat 
+# 18996 features across 48944 samples within 1 assay 
+# Active assay: Nanostring (18996 features, 0 variable features)
+#  1 layer present: counts
+#  1 spatial field of view present: Pancreas
+
+# head(nano.obj@meta.data, 4)
+
+
+# SCTransform
+nano.obj <- SCTransform(
+  nano.obj,
+  assay = "Nanostring",
+  clip.range = c(-10, 10),
+  conserve.memory = TRUE,       # ✅ Definitely use (saves ~40% RAM)
+  method = "glmGamPoi",         # ✅ Strongly recommended (faster + more accurate)
+  variable.features.n = 5000,   # Increase from default 3000
+  return.only.var.genes = FALSE,
+  vars.to.regress = "percent.rb",
+  verbose = TRUE,
+)
+
+nano.obj
+# An object of class Seurat 
+# 37992 features across 48944 samples within 2 assays 
+# Active assay: SCT (18996 features, 5000 variable features)
+#  3 layers present: counts, data, scale.data
+#  1 other assay present: Nanostring
+#  1 spatial field of view present: Pancreas
+
+Assays(nano.obj) # "Nanostring" "SCT"
+
+view(nano.obj@meta.data)
+
+# colnames(nano.obj@meta.data) # [1] "orig.ident"  "nCount_Nanostring"  "nFeature_Nanostring" "nCount_SCT"         [5] "nFeature_SCT"
+# head(row.names(nano.obj), 20)
+# # [1] "A1BG"    "A1CF"    "A2M"     "A2ML1"   "A3GALT2" "A4GALT"  "A4GNT"   "AAAS"    "AACS"    "AADAC"
+# # [11] "AADACL2" "AADACL3" "AADACL4" "AADAT"   "AAGAB"   "AAK1"    "AAMDC"   "AAMP"    "AANAT"   "AAR2"
+# length(row.names(nano.obj)) # 18996
+
+
+
+# -------------- Verifications ---------------
+
+# Original genes in Nanostring assay
+original_genes <- nrow(GetAssayData(nano.obj, assay = "Nanostring", layer = "counts")) # 18996
+
+# Genes in SCT assay
+sct_genes <- nrow(nano.obj[["SCT"]]) # 18996
+
+cat(sprintf(
+  "Genes retained: %.1f%% (%d/%d)",
+  sct_genes/original_genes * 100,
+  sct_genes,
+  original_genes
+))
+
+# Expected Output:
+# Genes retained: 100.0% (18996/18996)
+# This confirms no genes were lost during SCT
+
+# Top 10 variable genes
+# head(VariableFeatures(nano.obj), 100)
+# Expected: A list of biologically relevant pancreatic genes (e.g., INS, GCG, SST, TTR, PPY)
+
+# Check residual distribution
+feature.attrs <- SCTResults(nano.obj, slot = "feature.attributes")
+summary(feature.attrs$residual_variance)
+# Healthy distribution:
+# Median (0.65355) within optimal 0.5-2 range
+# Max variance (529.89) expected for highly variable genes like INS
+# No zero-variance genes (Min > 0)
+
+# Visualize Transformation Results
+VlnPlot(nano.obj,
+        features = c("nCount_Nanostring", "nCount_SCT"),
+        group.by = "orig.ident",
+        pt.size = 0)
+# Expected: to see nCount_SCT with the sioullioutte like a human (with a waist)
+
+
+# Save object
+# saveRDS(
+#   nano.obj,
+#   file = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_pancreas_SCT.rds")
+
+
+#############################################
+###### IMPORTANT 
+#############################################
+# Skip "FindSpatiallyVariableFeatures" because is not necessary for our analysis. Also, it is adapted to 10x Visium.
+# Skip this "RunPCA" with 'features = SpatiallyVariableFeatures()' has to be "VariableFeatures". 
+
+# Identify variable features (optional but useful)
+# nano.obj <- FindVariableFeatures(
+#   nano.obj,
+#   assay = "SCT",
+#   nfeatures = 3000
+#   )
+
+# SCTransform() already selected 5000 variable features by default (variable.features.n = 5000).
+# When you call FindVariableFeatures() again afterward, you're replacing those with a new set — in your case, selecting the top 3000. By reducing to 3000 can: Speed up computation, Slightly denoise the data,
+# But may drop informative genes from spatially or biologically relevant contexts (especially in spatial data).
+# Recommendation: Keep the SCTransform defaults (5000)
+###########################################
+###########################################
+
+# nano.obj
+# An object of class Seurat 
+# 37992 features across 48944 samples within 2 assays 
+# Active assay: SCT (18996 features, 5000 variable features)
+#  3 layers present: counts, data, scale.data
+#  1 other assay present: Nanostring
+#  1 spatial field of view present: Pancreas
+
+
+# colnames(nano.obj@meta.data)
+# view(nano.obj@meta.data)
+# head((nano.obj@meta.data), 3)
+# colnames(nano.obj@images$Pancreas@boundaries$segmentation@bbox)
+
+```
+
+## *Dimensional reduction, clustering and visualizations*
+
+```{r}
+# Load SCTransformed Seurat object
+# nano.obj <- readRDS("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_pancreas_SCT.rds")
+
+# nano.obj
+# An object of class Seurat 
+# 37992 features across 48944 samples within 2 assays 
+# Active assay: SCT (18996 features, 5000 variable features)
+#  3 layers present: counts, data, scale.data
+#  1 other assay present: Nanostring
+#  1 spatial field of view present: Pancreas
+
+
+# PCA on variable genes (not spatially variable)
+nano.obj <- RunPCA(
+  nano.obj,
+  assay = "SCT",
+  features = VariableFeatures(nano.obj)
+  )
+
+# 5️⃣ Visualize variance explained
+ElbowPlot(nano.obj, ndims = 50)
+
+# 6️⃣ Run UMAP, neighbors, and clustering
+nano.obj <- RunUMAP(nano.obj, dims = 1:21, reduction = "pca")
+nano.obj <- FindNeighbors(nano.obj, dims = 1:21)
+nano.obj <- FindClusters(nano.obj, resolution = 1.0)
+
+# 7️⃣ UMAP & spatial visualization of clusters
+DimPlot(nano.obj, raster = FALSE, label = TRUE, pt.size = 1.2) + ggtitle("UMAP: Cell Clusters")
+ImageDimPlot(nano.obj, cols = "glasbey") + ggtitle("Spatial Tissue Clusters")
+
+nano.obj
+# An object of class Seurat 
+# 37992 features across 48944 samples within 2 assays 
+# Active assay: SCT (18996 features, 5000 variable features)
+#  3 layers present: counts, data, scale.data
+#  1 other assay present: Nanostring
+#  2 dimensional reductions calculated: pca, umap
+#  1 spatial field of view present: Pancreas
+
+
+# Save object
+# saveRDS(
+#   nano.obj,
+#   file = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_pancreas_PCA-UMAP.rds")
+
+
+```
+
+## *Differential Expression Gene (DEG) analysis - cell annotation - visualizations & tables*
+
+```{r}
+# Load Seurat object
+nano.obj <- readRDS("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_pancreas_PCA-UMAP.rds")
+ 
+# nano.obj
+# An object of class Seurat 
+# 37992 features across 48944 samples within 2 assays 
+# Active assay: SCT (18996 features, 5000 variable features)
+#  3 layers present: counts, data, scale.data
+#  1 other assay present: Nanostring
+#  2 dimensional reductions calculated: pca, umap
+#  1 spatial field of view present: Pancreas
+
+# 8️⃣ Marker discovery
+All.markers <- FindAllMarkers(
+  nano.obj,
+  assay = "SCT",
+  only.pos = TRUE,            # Report only upregulated markers
+  min.pct = 0.1,              # More inclusive (detects rare cell-type markers). 
+  logfc.threshold = 0.1,      # Lower LFC threshold (more inclusive)
+  test.use = "wilcox",        # Standard test for DE
+  return.thresh = 0.01        # FDR < 1%
+)
+
+# min.pct = 0.1 (Default): This means the gene must be expressed in at least 10% of cells in either of the two clusters being compared.
+# return.thresh = 0.01: Filters for adjusted p-value (FDR). Default is 0.05. Using 0.01 makes the result more stringent.
+
+
+write.csv(All.markers, 
+          "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/markers_tissue_clusters.csv", 
+          row.names = FALSE
+          )
+
+# View top 5 markers per cluster
+top_markers <- All.markers %>%
+  group_by(cluster) %>%
+  slice_max(order_by = avg_log2FC, n = 5)
+
+# Display the result
+head(top_markers, 10)
+
+dim(All.markers)
+head(All.markers)
+
+# A tibble: 6 × 7
+# Groups:   cluster [2]
+#       p_val avg_log2FC pct.1 pct.2 p_val_adj cluster gene    
+#       <dbl>      <dbl> <dbl> <dbl>     <dbl> <fct>   <chr>   
+# 1 0               2.36 0.421 0.099 0         0       RBPJL   
+# 2 0               2.27 0.349 0.081 0         0       PGGHG   
+# 3 0               2.27 0.441 0.112 0         0       PNLIPRP2
+# 4 0               2.20 0.168 0.042 0         0       FUT1    
+# 5 1.31e-276       2.13 0.131 0.033 2.50e-272 0       IZUMO1  
+# 6 0               3.28 0.296 0.043 0         1       MUC6   
+
+# The table shows the high DEG from cells in cluster zero (then 1...) vs all the other clusters
+# p_val: Raw p-value from the statistical test (Wilcoxon test here) comparing expression levels
+# avg_log2FC: Log₂ fold-change between cluster vs. all other cells — higher = more specific marker
+# pct.1:	% of cells in the cluster expressing the gene
+# pct.2: % of cells in other clusters expressing the gene
+# p_val_adj: 	Adjusted p-value (FDR corrected using Bonferroni or BH)
+# cluster:	Cluster ID (as assigned by FindClusters)
+
+# Recommendations:
+# Don't rely only on log2FC. Look at both pct.1 vs. pct.2 to judge specificity.
+# A gene with high avg_log2FC but expressed in very few cells (e.g., <10%) may not be biologically useful.
+# Always validate marker genes against known biological expectations — like you’re doing with insulin, glucagon, etc.
+
+dplyr::arrange(All.markers, desc(avg_log2FC)) %>% 
+  dplyr::slice_head(n = 10)
+
+#       p_val avg_log2FC pct.1 pct.2 p_val_adj cluster  gene
+# GCG       0   9.426866 0.974 0.029         0      15   GCG
+# TTR       0   9.150177 0.954 0.015         0      15   TTR
+# INS1      0   6.772591 0.997 0.058         0      16   INS
+# CHGA      0   6.515519 0.590 0.013         0      15  CHGA
+# OLFM4     0   6.373070 1.000 0.042         0      13 OLFM4
+# CHGB      0   6.118834 0.389 0.009         0      15  CHGB
+# PLVAP     0   6.060987 0.791 0.028         0      10 PLVAP
+# VGF       0   6.029267 0.371 0.010         0      15   VGF
+# H4C6      0   5.867569 0.338 0.009         0      18  H4C6
+# H1-5      0   5.864857 0.458 0.013         0      18  H1-5
+
+
+
+# 9️⃣ Explore known cell-type markers
+
+# # Endocrine
+# FeaturePlot(nano.obj, features = c("INS", "GCG", "SST", "PPY", "GHRL"), label = TRUE)
+# 
+# # Exocrine
+# FeaturePlot(nano.obj, features = c("CPA1", "PRSS1"), label = TRUE, pt.size = 1)  # Acinar
+# FeaturePlot(nano.obj, features = c("KRT19", "CFTR"), label = TRUE, pt.size = 1)  # Ductal
+# 
+# # Immune
+# FeaturePlot(nano.obj, features = c("LYZ", "CD3E", "CD14", "CD19"), 
+#             label = TRUE, pt.size = 1)
+
+# Violin plot
+VlnPlot(nano.obj,
+        features = c("INS", "GCG", "SST", "CPA1", "KRT19", "CD14", "CD3G" , "PECAM1"),
+        assay = "Nanostring",
+        layer = "counts",
+        pt.size = 0.1) + NoLegend()
+
+# 🔟 Curated Pancreatic Cell-Type Markers
+
+panc_markers <- list(
+  beta        = c("INS", "IAPP", "PDX1", "MAFA", "SLC30A8", "CHGA"),
+  alpha       = c("GCG", "TTR", "IRX2", "FXYD2", "CRYBA2"),
+  gamma       = c("GHRL", "SST", "LEP", "NPY", "PYY"),
+  delta       = c("SST", "HHEX", "RBP4", "SEC11C", "LEPR"),
+  PP          = c("PPY", "AQP3", "MEIS2", "PLA2G1B", "NR5A2"),
+  acinar      = c("PRSS1", "CPA1", "CPA2", "CTRB2", "AMY2A", "MUC6"),
+  ductal      = c("KRT19", "KRT8", "KRT7", "CFTR", "SOX9", "MMP7" ),
+  macrophage  = c("PTPRC", "LYZ", "CD14", "C1QA", "CD163", "CSF1R", "TREM2", "CD74", "HLA-DRB1"),
+  CD4         = c("PTPRC", "CD3G", "CD4"),
+  CD8         = c("PTPRC", "CD3G", "CD8A", "CD8B"),
+  B           = c("PTPRC","CD79A","CD79B","CD19","MS4A1","IGKC","IGHA1","IGHM","JCHAIN","IGLL5"),  # CD20 = MS4A1
+  EC          = c("PECAM1", "VWF", "CDH5", "CLDN5", "SELE", "PLVAP", "VEGFB", "CLDN14"),
+  fibro       = c("ACTA2", "VIM", "DES", "COL1A1", "PDGFRA", "FSCN2")
+)
+
+# Extract unique marker genes
+key_genes <- unique(unlist(panc_markers))
+
+# 🔬 DotPlot of marker expression
+DotPlot(nano.obj,
+        features = key_genes,
+        group.by = "seurat_clusters") +
+  # scale_color_viridis_c(option = "D") +  # Options: A, B, C, D, E
+  # scale_color_distiller(palette = "RdBu", direction = 1) +
+  # scale_color_gradient(low = "#f0f0f0", high = "#084594") +
+  scale_color_distiller(palette = "YlGnBu", direction = 1) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Pancreatic Marker Expression per cell cluster")
+
+
+# By observing the DotPlot, clusters 15 and 16 are actually sharing the expression of INS, GCG, PPY and SST.
+# Thus, see possibility to split and subcluster both clusters and reintegrate them to the rest.
+
+
+# 🚨 Subclustering: isolate clusters 15 and 16
+Idents(nano.obj) <- "seurat_clusters"
+sub <- subset(nano.obj, idents = c("15", "16"))
+
+# Re-run PCA + UMAP + Clustering on this subset
+sub <- RunPCA(sub, features = VariableFeatures(sub), verbose = FALSE)
+sub <- RunUMAP(sub, dims = 1:15, reduction = "pca")
+sub <- FindNeighbors(sub, dims = 1:15)
+sub <- FindClusters(sub, resolution = 0.5)
+
+# Check subcluster assignments
+table(Idents(sub))
+
+# 🧬 Reintegrate refined identities
+# Assign new labels like 15.1, 15.2, 16.1, etc.
+original_ids <- sub$seurat_clusters
+new_sub_ids <- Idents(sub)
+
+# Combine original and subcluster identities
+combined_ids <- paste0(as.character(original_ids), ".", as.character(new_sub_ids))
+
+# Set them as identities for the sub object
+Idents(sub) <- combined_ids
+
+# Map back into full Seurat object
+nano.obj$refined_clusters <- as.character(Idents(nano.obj))  # Start with original
+nano.obj$refined_clusters[Cells(sub)] <- as.character(Idents(sub))  # Overwrite subclustered cells
+
+# 🔁 UMAP with refined clusters
+p1 <- DimPlot(nano.obj, 
+              group.by = "refined_clusters", 
+              raster = FALSE, 
+              label = TRUE, 
+              pt.size = 1.4,
+              label.size = 6) + 
+  theme(
+    plot.title = element_text(size = 20, face = "bold"),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 15)  # Fixed: removed misplaced +
+  ) + 
+  ggtitle("UMAP: Refined Cell Clustering of Human Pancreas (with Subclusters 15.x & 16.x)") +
+  guides(color = guide_legend(
+    title = "Cell Cluster ID",
+    override.aes = list(size = 4, alpha = 1),
+    ncol = 1
+  ))
+
+p1
+
+# 🔬 DotPlot using refined clusters
+DotPlot(nano.obj,
+        features = key_genes,
+        group.by = "refined_clusters") +
+  scale_color_distiller(palette = "YlGnBu", direction = 1) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  ggtitle("Marker Expression After Refinement")
+
+
+# ---------------- Azimuth cell annotation --------------------
+
+panc_markers_azimuth <- list(
+  beta               = c("INS", "IAPP", "PDX1", "SLC30A8", "DLK1", "INS-IGF2", "G6PC2", "HADH", "ADCYAP1", "GSN", "NPTX2", "C12orf75", "CHGA"),
+  alpha              = c("GCG", "TTR", "PPP1R1A", "CRYBA2", "TM4SF4", "MAFB", "GC", "GPX3", "PCSK2", "PEMT"),
+  gamma              = c("PPY", "AQP3", "MEIS2", "ID2", "GPC5-AS1", "CARTPT", "PRSS23", "ETV1", "PPY2", "TUBB2A"),
+  delta              = c("SST", "RBP4", "SERPINA1", "RGS2", "PCSK1", "SEC11C", "HHEX", "LEPR", "MDK", "LY6H"),
+  epsilon            = c("BHMT", "VSTM2L", "PHGR1", "TM4SF5", "ANXA13", "ASGR1", "DEFB1", "GHRL", "COL22A1", "OLFML3", "PYY"),
+  acinar             = c("REG1A", "PRSS1", "CTRB2", "CTRB1", "REG1B", "CELA3A", "PRSS2", "REG3A", "CPA1", "CPA2", "MUC6", "CLPS"),
+  ductal             = c("SPP1", "MMP7", "IGFBP7", "KRT7", "ANXA4", "SERPINA1", "LCN2", "CFTR", "KRT19", "SERPING1", "KRT8", "KRT7"),
+  quiescent_stellate = c("RGS5", "C11orf96", "FABP4", "CSRP2", "IL24", "ADIRF", "NDUFA4L2", "GPX3", "IGFBP4", "ESAM"),
+  activated_stellate = c("COL1A1", "COL1A2", "COL6A3", "COL3A1", "TIMP3", "TIMP1", "CTHRC1", "SFRP2", "BGN", "LUM"),
+  # schwann            = c("NGFR", "CDH19", "UCN2", "SOX10", "S100A1", "PLP1", "TSPAN11", "WNT16", "SOX2", "TFAP2A"),
+  macrophage         = c("LYZ", "CD14", "C1QA", "CD163", "CSF1R", "TREM2", "CD74", "HLA-DRB1", "ACP5", "APOE", "FCER1G", "C1QC", "C1QB", "SRGN"),
+  # B                  = c("CD79A","CD79B","CD19","MS4A1","IGKC","IGHA1","IGHM","JCHAIN","IGLL5"), 
+  endothelial_cells  = c("PECAM1", "VWF", "CDH5", "CLDN5", "SELE", "PLVAP", "RGCC", "ENG", "ESM1", "SERPINE1", "STC1", "MMP1", "GNG11")
+  # fibro              = c("ACTA2", "VIM", "DES", "COL1A1", "PDGFRA", "FSCN2"),
+  # cycling            = c("UBE2C", "TOP2A", "CDK1", "BIRC5", "PBK", "CDKN3", "MKI67", "CDC20", "CCNB2", "CDCA3")
+)
+
+# Extract unique marker genes
+key_genes_azimuth <- unique(unlist(panc_markers_azimuth))
+
+# 🔬 DotPlot of marker expression
+DotPlot(nano.obj,
+        features = key_genes_azimuth,
+        group.by = "refined_clusters") +
+  # scale_color_viridis_c(option = "D") +  # Options: A, B, C, D, E
+  # scale_color_distiller(palette = "RdBu", direction = 1) +
+  scale_color_gradient(low = "#f0f0f0", high = "#084594") +
+  # scale_color_distiller(palette = "YlGnBu", direction = 1) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8)) +
+  ggtitle("Pancreatic Marker Expression per cell cluster")
+
+
+################################################
+##### Flextable: Cluster IDs - Amounts - Freq
+################################################
+
+library(patchwork)
+library(dplyr)
+library(flextable)
+library(officer)
+library(gridExtra)
+library(grid)
+library(cowplot)
+library(ggplot2)
+
+# 🧮 1. Compute refined cluster frequencies
+cluster_summary <- as.data.frame(table(nano.obj$refined_clusters))
+colnames(cluster_summary) <- c("Cluster identifier", "Amount of cells")
+
+# 🔽 Sort in descending order
+cluster_summary <- cluster_summary %>%
+  arrange(desc(`Amount of cells`))
+
+# ➕ 2. Add percentage column
+cluster_summary$`% from total` <- round(100 * cluster_summary$`Amount of cells` / sum(cluster_summary$`Amount of cells`), 2)
+
+# ✅ 3. Add total row safely
+total_row <- data.frame(
+  `Cluster identifier` = "Total",
+  `Amount of cells` = sum(cluster_summary$`Amount of cells`),
+  `% from total` = 100.00,
+  check.names = FALSE  # Prevents column name parsing
+)
+
+# 🧼 4. Bind rows explicitly with aligned column names
+cluster_summary <- bind_rows(cluster_summary, total_row)
+
+# 🖼️ 5. Format with flextable
+ft_summary <- flextable(cluster_summary) %>%
+  theme_vanilla() %>%
+  add_header_lines("Amount and frequencies of Cell Clusters from human Pancreas*") %>%
+  fontsize(i = 1, size = 26, part = "header") %>%
+  add_footer_lines(values = c(
+    "* Source: https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-human-pancreas-ffpe-dataset/", 
+    "* Platform:  CosMx™ Spatial Molecular Imager (SMI).", 
+    "* Preservation method: Formalin-Fixed Paraffin-Embedded (FFPE)"
+    )) %>% 
+  # Alignment
+  align(align = "center", part = "header") %>%     # Center header (including title line)
+  align(align = "center", part = "body") %>%       # Center all body cells
+  align(align = "left", part = "footer") %>%       # Left-align footnote
+  # Total row styling
+  bold(~ `Cluster identifier` == "Total") %>%
+  bg(~ `Cluster identifier` == "Total", bg = "#2D2D2D", part = "body") %>%  
+  color(~ `Cluster identifier` == "Total", color = "white", part = "body") %>%  
+  # Borders
+  border_inner_h(border = fp_border(color = "#D3D3D3", width = 0.5)) %>%
+  border_outer(border = fp_border(color = "#D3D3D3", width = 0.5)) %>%
+  # Font
+  fontsize(size = 22, part = "all") %>%
+  autofit()
+
+# Show table
+ft_summary <- flextable::font(ft_summary, fontname = "Arial", part = "all")
+ft_summary
+
+# Saving image of flextable
+# Convert flextable to grob
+# ft_grob <- flextable::gen_grob(ft_summary)
+
+# Set the output path
+# output_path <- "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/pancreas_umap_table_clusters.png"
+
+# Generate the composite layout with spacing
+# library(grid)
+# library(gridExtra)
+
+# Manual PNG device creation
+# png(output_path, width = 26, height = 14, units = "in", res = 600)
+# grid.newpage()
+# pushViewport(viewport(width = 0.95, height = 0.95))
+# grid.arrange(p1, ft_grob, ncol = 2, widths = c(2, 1.6), padding = unit(2, "cm"))
+# dev.off()
+
+# Alternative:
+# Set up PNG graphics device
+# png("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/pancreas_umap_flextable.png",
+#     width = 3600, height = 1800, res = 300)
+# 
+# # Draw the plot directly to PNG device
+# grid.arrange(
+#   p1,
+#   ft_grob,
+#   nrow = 1,
+#   widths = c(2, 1.6)
+# )
+# 
+# # Turn off device
+# dev.off()
+
+
+
+###################################################################################
+##### Tissue visualization of genes: INS - GCG - SST - REG1A - SPP1 - C1QC - PECAM1
+###################################################################################
+
+ImageFeaturePlot(nano.obj, fov = "Pancreas", 
+                 features = "INS", 
+                 # pt.size = 0.5,                 # Increase dot size --> It doesn't work
+                 max.cutoff = "q95",             # Adjust contrast
+                 alpha = 0.8,                   # Semi-transparency
+                 cols = c("white", "red1"),       # Custom color gradient
+                 size = 1)      
+
+ImageFeaturePlot(nano.obj, fov = "Pancreas", 
+                 features = "GCG", 
+                 # pt.size = 0.5,                 # Increase dot size --> It doesn't work
+                 max.cutoff = "q95",             # Adjust contrast
+                 alpha = 0.8,                    # Semi-transparency
+                 cols = c("white", "red1"),       # Custom color gradient
+                 size = 1)    
+
+ImageFeaturePlot(nano.obj, fov = "Pancreas", 
+                 features = c("INS", "GCG", "SST","REG1A","SPP1", "C1QC", "PECAM1"),
+                 # pt.size = 0.5,                 # Increase dot size --> It doesn't work
+                 max.cutoff = "q95",             # Adjust contrast
+                 # alpha = 0.8,                   # Semi-transparency
+                 # cols = c("white", "red1"),       # Custom color gradient
+                 size = 0.5)
+
+# co-expression
+ImageDimPlot(nano.obj,
+             fov = "Pancreas", 
+             molecules = "INS",
+             nmols = 10000,          # Can increase for more visible signal
+             alpha = 0.8,            # Less transparency
+             size = 1.5) +           # Increase point size
+  NoLegend()
+
+p_genes <- ImageDimPlot(
+  nano.obj, 
+  fov = "Pancreas", 
+  molecules = c("INS", "GCG", "GHRL", "PPY"),
+  group.by = "refined_clusters",
+  # alpha = 0.3, 
+  nmols = 10000,
+  size = 0.1)
+
+p_genes
+
+
+
+# Recreate the plot
+library(patchwork)
+
+p_genes_list <- ImageDimPlot(
+  nano.obj,
+  fov = "Pancreas",
+  molecules = c("INS", "GCG", "GHRL", "PPY"),
+  group.by = "refined_clusters",
+  nmols = 10000,
+  size = 0.1,
+  combine = FALSE  # 👈 This is the key
+)
+
+
+# ggsave(
+#   filename = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/spatial_pancreas_genes_legend.png",
+#   plot = p_genes,
+#   width = 7,
+#   height = 6,
+#   dpi = 600
+# )
+
+#########################
+##### Cell annotation
+#########################
+
+# Assign cell types based on refined clusters
+nano.obj$cell_type <- case_when(
+  nano.obj$refined_clusters %in% c("4.4", "0.0") ~ "Beta",
+  nano.obj$refined_clusters %in% c("2.2")        ~ "Delta",
+  nano.obj$refined_clusters %in% c("3.3")        ~ "Alpha",
+  nano.obj$refined_clusters %in% c("1.1")        ~ "Gamma/B/A",
+  nano.obj$refined_clusters %in% c("9", "8", "7", "6", "4", "3", "12", "11", "0") ~ "Acinar",
+  nano.obj$refined_clusters %in% c("5", "17", "13", "1") ~ "Ductal",
+  nano.obj$refined_clusters %in% c("14", "18")    ~ "Macrophages",
+  nano.obj$refined_clusters %in% c("2")           ~ "Stellate",
+  nano.obj$refined_clusters %in% c("10")          ~ "Endothelial",
+  TRUE ~ "Unassigned"
+)
+
+# Check annotation counts
+view(nano.obj@meta.data)
+table(nano.obj$cell_type)
+colnames(nano.obj@meta.data) # the new column "cell_type" with the annotated cells
+# [1] "orig.ident"   "nCount_Nanostring"   "nFeature_Nanostring" "percent.mt"      "percent.rb"         
+# [6] "nCount_SCT"    "nFeature_SCT"        "SCT_snn_res.1.5"     "seurat_clusters"     "SCT_snn_res.1.2"    
+# [11] "SCT_snn_res.1.6"     "SCT_snn_res.1.7"     "SCT_snn_res.1.8"     "SCT_snn_res.2"       "SCT_snn_res.1"  
+# [16] "refined_clusters"    "cell_type"    
+unique(nano.obj@meta.data$cell_type)
+# [1] "Stellate"    "Acinar"      "Ductal"      "Macrophages" "Endothelial" "Alpha"       "Beta"        "Gamma/B/A" 
+# [9] "Delta"   
+
+# UMAP
+p_celltype <- DimPlot(
+  nano.obj, 
+  group.by = "cell_type", 
+  label = TRUE, 
+  repel = TRUE,
+  pt.size = 1.5,
+  label.size = 6,
+  alpha = 0.6,
+  label.box = TRUE,
+  raster = FALSE
+) + 
+  ggtitle("UMAP: Annotated Cell Types in Human Pancreas (Nanostring - CosMx)") +
+  NoAxes() +
+  guides(color = guide_legend(
+    title = "Cell Type",
+    override.aes = list(size = 4, alpha = 1),
+    ncol = 1
+  )) +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+    plot.margin = margin(1, 1, 1, 1, "cm"),
+    legend.title = element_text(size = 16),
+    legend.text = element_text(size = 15),
+    legend.key.size = unit(1, "cm"),
+    legend.spacing.y = unit(0.4, "cm")
+  )
+
+p_celltype
+
+# ggsave(
+#   filename = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/pancreas_umap_celltypes.png",
+#   plot = p_celltype,
+#   width = 13,
+#   height = 6,
+#   dpi = 600
+# )
+
+
+################################################
+##### Flextable: Cell Clusters - Amounts - Freq
+################################################
+
+# library(patchwork)
+library(dplyr)
+library(flextable)
+library(officer)
+library(gridExtra)
+library(grid)
+# library(cowplot)
+library(ggplot2)
+
+# 🧮 1. Compute cell type frequencies
+cluster_summary1 <- as.data.frame(table(nano.obj$cell_type))
+colnames(cluster_summary1) <- c("Type of pancreatic cells", "Amount of cells")
+
+# 🔽 2. Sort in descending order
+cluster_summary1 <- cluster_summary1 %>%
+  arrange(desc(`Amount of cells`))
+
+# ➕ 3. Add percentage column
+cluster_summary1$`Frequency from total (%)` <- round(
+  100 * cluster_summary1$`Amount of cells` / sum(cluster_summary1$`Amount of cells`), 2
+)
+
+# ✅ 4. Add total row
+total_row <- data.frame(
+  `Type of pancreatic cells` = "Total",
+  `Amount of cells` = sum(cluster_summary1$`Amount of cells`),
+  `Frequency from total (%)` = 100.00,
+  check.names = FALSE
+)
+
+cluster_summary1 <- bind_rows(cluster_summary1, total_row)
+
+# 🖼️ 5. Format with flextable
+ft_summary1 <- flextable(cluster_summary1) %>%
+  theme_vanilla() %>%
+  add_header_lines("Content and types of pancreatic cells from Human*") %>%
+  fontsize(i = 1, size = 26, part = "header") %>%
+  add_footer_lines(values = c(
+    "* Source: https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-human-pancreas-ffpe-dataset/", 
+    "* Platform: CosMx™ Spatial Molecular Imager (SMI).", 
+    "* Preservation method: Formalin-Fixed Paraffin-Embedded (FFPE)"
+  )) %>%
+  align(align = "center", part = "header") %>%
+  align(align = "center", part = "body") %>%
+  align(align = "left", part = "footer") %>%
+  bold(~ `Type of pancreatic cells` == "Total", part = "body") %>%
+  bg(~ `Type of pancreatic cells` == "Total", bg = "#2D2D2D", part = "body") %>%
+  color(~ `Type of pancreatic cells` == "Total", color = "white", part = "body") %>%
+  border_inner_h(border = fp_border(color = "#D3D3D3", width = 0.5)) %>%
+  border_outer(border = fp_border(color = "#D3D3D3", width = 0.5)) %>%
+  fontsize(size = 16, part = "all") %>%
+  font(fontname = "Arial", part = "all") %>%
+  fontsize(size = 10, part = "footer") %>%
+  autofit()
+
+ft_summary1
+
+
+# Convert flextable to a grid grob
+# ft_grob <- flextable::gen_grob(ft_summary1)
+
+# Set the output path
+# output_path_table <- "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/pancreas_celltypes_table_alone1.png"
+
+# Create a white background plot using grid
+# png(output_path_table, 
+#     width = 1300, 
+#     height = 800,
+#     res = 600,
+#     bg = "white")  # Adjust dimensions as needed
+# grid::grid.newpage()
+# grid::grid.rect(gp = grid::gpar(fill = "white", col = "white"))  # White background
+# grid::grid.draw(ft_grob)
+# dev.off()
+
+
+#########################################
+##### Tissue visualization of cell types
+#########################################
+
+# Cell types
+ImageDimPlot(
+  nano.obj,
+  fov = "Pancreas",
+  group.by = "cell_type",   # 🧠 correct metadata field
+  # cols = "glasbey",
+  cells = WhichCells(nano.obj, expression = cell_type %in% 
+                       c("Beta", "Alpha", "Macrophages", "Acinar", "Ductal")),
+  nmols = 5000,
+  size = 1.1
+)
+
+# [1] "Stellate"    "Acinar"      "Ductal"      "Macrophages" "Endothelial" "Alpha"       "Beta"        "Gamma/B/A" 
+# [9] "Delta"
+
+
+# -------------------- Changing the background to white ------------------------
+
+
+# Full plot with both panels and legend
+p_spatial <- ImageDimPlot(
+  nano.obj,
+  fov = "Pancreas",
+  group.by = "cell_type",
+  cells = WhichCells(nano.obj, expression = cell_type %in% 
+                       c("Beta", "Alpha", "Macrophages", "Acinar", "Ductal")),
+  nmols = 10000,
+  size = 1.0
+) & 
+  theme(
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  )
+
+p_spatial
+
+# ggsave(
+#   filename = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/spatial_pancreas_celltypes_legend.png",
+#   plot = p_spatial,
+#   width = 7,
+#   height = 6,
+#   dpi = 600
+# )
+
+
+
+# ------------------------ Cell types - Zoom in -----------------------------
+
+library(future)
+
+options(future.globals.maxSize = 10 * 1024^3)  # 10 GB
+
+
+### 1. Initial full-tissue overview
+ImageDimPlot(nano.obj, fov = "Pancreas", 
+             group.by = "cell_type",
+             nmols = 10000,
+             size = 1.0,
+             axes = TRUE) # cols = "glasbey")
+
+### 2. Crop region (adjust `x` and `y` ranges to zoom into desired area)
+pancreas.crop <- Crop(nano.obj[["Pancreas"]],
+                      x = c(31000, 35000),   # <-- adjust as needed
+                      y = c(61000, 64000))   # <-- adjust as needed
+
+### 3. Add new zoomed FOV to object
+nano.obj[["zoom_pancreas"]] <- pancreas.crop
+
+### 4. Define segmentation boundaries if not auto-detected
+DefaultBoundary(nano.obj[["zoom_pancreas"]]) <- "segmentation"
+
+### 5. Visualize zoomed region: colored by cell type (or cluster)
+p_spatial_zoom <- ImageDimPlot(
+  nano.obj,
+  fov = "zoom_pancreas",
+  # cols = "glasbey",            # use your preferred palette
+  group.by = "cell_type",      # or "refined_clusters"
+  # cols = "glasbey",
+  alpha = 0.8,
+  coord.fixed = FALSE
+)
+
+p_spatial_zoom
+
+# ggsave(
+#   filename = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/spatial_pancreas_celltypes_zoom_legend.png",
+#   plot = p_spatial_zoom,
+#   width = 7,
+#   height = 6,
+#   dpi = 600
+# )
+
+### 5.1 Visualize zoomed region: colored by cell type (or cluster): Changing palette
+p_spatial_zoom_glasbey <- ImageDimPlot(
+  nano.obj,
+  fov = "zoom_pancreas",
+  cols = "glasbey",            # use your preferred palette
+  group.by = "cell_type",      # or "refined_clusters"
+  # cols = "glasbey",
+  alpha = 0.8,
+  coord.fixed = FALSE
+)
+
+p_spatial_zoom_glasbey
+
+# ggsave(
+#   filename = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/spatial_pancreas_celltypes_zoom_legend_gl.png",
+#   plot = p_spatial_zoom_glasbey,
+#   width = 7,
+#   height = 6,
+#   dpi = 600
+# )
+
+### 6. Add molecule-level visualization for markers of interest
+
+mol_zoom1 <- ImageFeaturePlot(             # It works!!
+  nano.obj,
+  features = c("INS", "GCG", "GHRL", "PPY"),
+  fov = "zoom_pancreas",
+  alpha = 1.0,
+  max.cutoff = "q95",         # Contrast control
+  size = 1.2,                 # Marker size
+  cols = c("white", "red1")   # Color gradient
+)
+
+# ggsave(
+#   filename = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/spatial_pancreas_zoom_molecules1_legend.png",
+#   plot = mol_zoom1,
+#   width = 7,
+#   height = 6,
+#   dpi = 600
+# )
+
+
+ImageDimPlot(
+  nano.obj,
+  fov = "Pancreas",
+  group.by = "cell_type",
+  molecules = c("INS", "GCG", "GHRL", "PPY"),
+  mols.size = 1.0,                             # 🔸 Slightly larger molecule dots
+  nmols = 15000,                               # 🔸 More molecules (adjust for crowding)
+  size = 2,                                    # 🔸 Increase cell boundary thickness
+  border.color = "black",                       # 🔸 Makes cells stand out
+  alpha = 0.7
+) + 
+  coord_cartesian(
+    xlim = c(31000, 35000),
+    ylim = c(61000, 64000)
+  ) + 
+  ggtitle("Zoomed-In View: Cell Types and Key Hormones") +
+  theme_minimal(base_size = 14)
+
+
+molzoom2 <- ImageDimPlot(
+  nano.obj,
+  fov = "Pancreas",
+  group.by = "cell_type",
+  molecules = c("INS", "GCG", "GHRL", "PPY", "SST", "HLA-DRB1", "PECAM1", "KRT8"),
+  mols.size = 1.0,            
+  nmols = 15000,              
+  size = 0.6,                   
+  border.color = "white",    
+  alpha = 0.4
+) + 
+  coord_cartesian(
+    xlim = c(31000, 35000),
+    ylim = c(61000, 64000)
+  ) +
+  ggtitle("Zoomed-In Pancreas: Key Hormones and other molecules") +
+  theme(
+    panel.background = element_rect(fill = "black", color = NA),
+    plot.background  = element_rect(fill = "black", color = NA),
+    legend.background = element_rect(fill = "black"),
+    legend.key = element_rect(fill = "black"),
+    legend.text = element_text(color = "white"),
+    legend.title = element_text(color = "white"),
+    plot.title = element_text(color = "white", size = 14, face = "bold"),
+    axis.text = element_text(color = "white"),
+    axis.title = element_text(color = "white")
+  )
+
+molzoom2
+
+
+
+# Rebuild plot with combined legend
+molzoom2 <- ImageDimPlot(
+  nano.obj,
+  fov = "Pancreas",
+  group.by = "cell_type",
+  molecules = c("INS", "GCG", "GHRL", "PPY", "SST", "HLA-DRB1", "PECAM1", "KRT8"),
+  mols.size = 1.0,
+  nmols = 15000,
+  size = 0.6,
+  border.color = "white",
+  alpha = 0.4
+) +
+  coord_cartesian(
+    xlim = c(31000, 35000),
+    ylim = c(61000, 64000)
+  ) +
+  ggtitle("Zoomed-In Pancreas: Key Hormones and cell markers") +
+  theme(
+    panel.background = element_rect(fill = "black", color = NA),
+    plot.background  = element_rect(fill = "black", color = NA),
+    legend.background = element_rect(fill = "black"),
+    legend.key = element_rect(fill = "black"),
+    legend.text = element_text(color = "white"),
+    legend.title = element_text(color = "white"),
+    plot.title = element_text(color = "white", size = 14, face = "bold"),
+    axis.text = element_text(color = "white"),
+    axis.title = element_text(color = "white")
+  )
+
+# Try suppressing the cell_type legend manually by name
+molzoom2_clean <- molzoom2 +
+  guides(
+    fill = "none",     # remove fill legend (often for cell_type in ImageDimPlot)
+    color = guide_legend(override.aes = list(size = 2))  # keep molecules
+  )
+
+molzoom2_clean
+
+
+# ggsave(
+#   filename = "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/spatial_pancreas_zoom_molecules3_legend.png",
+#   plot = molzoom2_clean,
+#   width = 7,
+#   height = 6,
+#   dpi = 600
+# )
+
+
+# --------
+
+# nano.obj
+# An object of class Seurat 
+# 37992 features across 48944 samples within 2 assays 
+# Active assay: SCT (18996 features, 5000 variable features)
+#  3 layers present: counts, data, scale.data
+#  1 other assay present: Nanostring
+#  2 dimensional reductions calculated: pca, umap
+#  2 spatial fields of view present: Pancreas zoom_pancreas
+
+# Save
+# saveRDS(nano.obj, "/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_annotated.rds")
+
+library(Seurat)
+# Calling nano.obj
+# nano.obj <- readRDS("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/nano_annotated.rds")
+
+# nano.obj
+# An object of class Seurat 
+# 37992 features across 48944 samples within 2 assays 
+# Active assay: SCT (18996 features, 5000 variable features)
+#  3 layers present: counts, data, scale.data
+#  1 other assay present: Nanostring
+#  2 dimensional reductions calculated: pca, umap
+#  2 spatial fields of view present: Pancreas zoom_pancreas
+
+```
+
+## *Conversion into H5AD format*
+
+```{r}
+
+view(nano.obj@meta.data)
+colnames(nano.obj@meta.data)
+# [1] "orig.ident"     "nCount_Nanostring"   "nFeature_Nanostring" "percent.mt"     "percent.rb"         
+# [6] "nCount_SCT"     "nFeature_SCT"        "SCT_snn_res.1.5"     "seurat_clusters"     "SCT_snn_res.1.2"    
+# [11] "SCT_snn_res.1.6"     "SCT_snn_res.1.7"     "SCT_snn_res.1.8"     "SCT_snn_res.2"       "SCT_snn_res.1"      
+# [16] "refined_clusters"    "cell_type"  
+
+# Set assay
+DefaultAssay(nano.obj) <- "SCT"
+
+# Extract centroids (x = imagecol, y = imagerow)
+# Step 1: Get spatial coordinates
+coords <- GetTissueCoordinates(nano.obj, fov = "Pancreas")
+head(coords)
+#          x        y cell
+# 1 52580.04 41889.41 1_51
+# 2 52711.04 41908.41 2_51
+# 3 52802.04 41899.41 3_51
+# 4 52908.04 41880.41 4_51
+# 5 53011.04 41885.41 5_51
+# 6 53165.04 41904.41 6_51
+
+# Step 2: Fix rownames to match cell barcodes (required for matching to Seurat cells)
+rownames(coords) <- coords$cell
+
+# Add to meta.data (important for .h5ad)
+# Step 3: Now safely assign x/y to meta.data
+nano.obj$x <- coords[Cells(nano.obj), "x"]
+nano.obj$y <- coords[Cells(nano.obj), "y"]
+
+# Confirmation that coordinates were add it to meta.data
+colnames(nano.obj@meta.data)
+# [1] "orig.ident"          "nCount_Nanostring"   "nFeature_Nanostring" "percent.mt"         
+#  [5] "percent.rb"          "nCount_SCT"          "nFeature_SCT"        "SCT_snn_res.1.5"    
+#  [9] "seurat_clusters"     "SCT_snn_res.1.2"     "SCT_snn_res.1.6"     "SCT_snn_res.1.7"    
+# [13] "SCT_snn_res.1.8"     "SCT_snn_res.2"       "SCT_snn_res.1"       "refined_clusters"   
+# [17] "cell_type"           "x"                   "y"    
+
+view(nano.obj@meta.data)
+
+head((nano.obj@meta.data), 3)
+
+head(nano.obj@meta.data[, c("x", "y")], 3)
+#    x        y
+# 1_51 52580.04 41889.41
+# 2_51 52711.04 41908.41
+# 3_51 52802.04 41899.41
+
+
+# -------------------------- H5AD conversion --------------------------
+
+# Load necessary packages
+library(Seurat)
+library(SingleCellExperiment)
+library(zellkonverter)
+# library(reticulate)
+
+# Convert Seurat to SingleCellExperiment (spatial coords now inside meta.data)
+sce <- as.SingleCellExperiment(nano.obj)
+
+# Ensure output folder exists
+# dir.create("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2", showWarnings = FALSE, recursive = TRUE)
+
+# Save to H5AD format
+output_path <- file.path("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/nano_annotated.h5ad")
+writeH5AD(sce, file = output_path)
+
+message("✅ H5AD successfully written with spatial coordinates to: ", output_path)
+
+# -------------------------- H5AD conversion: lighter version --------------------------
+
+# Reduce object size before conversion
+nano.obj_light <- DietSeurat(nano.obj, 
+                       counts = TRUE, 
+                       data = TRUE, 
+                       scale.data = FALSE, 
+                       assays = "SCT")
+
+sce <- as.SingleCellExperiment(nano.obj_light)
+output_path <- file.path("/home/ubuntu/proj6_nanoString_CosMx_Spatial_Pancreas/proj6_RData_EC2/nano_light_annotated.h5ad")
+writeH5AD(sce, file = output_path)
+
+message("✅ H5AD successfully written with spatial coordinates to: ", output_path)
+
+# Because the layer `scale.data` was not included in "nano.obj_light",
+# the object then only keeps the `SCT` assay with `counts` and `data` layers.
+# The "nano_annotated.h5ad" is 7.5GB while the "nano_light_annotated.h5ad" only 535MB.
+# This is completely expected and demonstrates a key point about spatial data storage. 
+
+# Key Insights:
+# 
+#     The 7.5GB file contains:
+# 
+#         Full gene expression matrices (counts + data)
+# 
+#         Pearson residuals (scale.data)
+# 
+#         All metadata columns
+# 
+#         Spatial polygon coordinates
+# 
+#         Image data references
+# 
+#     The 535MB light version contains:
+# 
+#         Only raw counts and normalized data
+# 
+#         Basic metadata (no polygons)
+# 
+#         Cluster assignments
+# 
+#         Spatial coordinates as single points (not polygons)
+
+# Alternative DietSeurat()
+# Best practice for export
+# nano.obj_export <- DietSeurat(
+#   nano.obj,
+#   assays = "SCT",
+#   layers = c("counts", "data"),  # Exclude scale.data
+#   dimreducs = c("pca", "umap"),  # Keep reductions
+#   graphs = NULL                  # Exclude neighbor graphs
+# )
+#
+#For Spatial Analysis in Python:
+
+    # Use the light version (535MB) for most workflows
+    # 
+    # Only keep the full version if you need:
+    # 
+    #     Detailed polygon boundaries
+    # 
+    #     Scale.data for exact Pearson residuals
+    # 
+    #     Image data embedded in the file
+
+# Final Size Comparison:
+# Component	          Full Version   	Light Version
+# Gene Expression	      ✓ ✓ ✓	            ✓ ✓
+# Scale Data	           ✓              	✗
+# Spatial Polygons	     ✓	              ✗
+# Image Data	           ✓              	✗
+# Reductions	           ✗	              ✗
+# File Size	           7.5 GB	          535 MB
+# Python Loading	    Minutes	         Seconds
+
+# Reductions: refers to dimentionality reductions like PCA, UMAP, etc.SPCA (Spatial PCA), tSNE
+
+# Component	            Full Version	              Light Version	              Size Impact
+# scale.data	              ✓ (dense matrix)	          ✗	                        ~7 GB
+# Spatial Polygons	        ✓ (detailed)	              ✗ (only centroids)	      ~0.5 GB
+# Image Data	              ✓ (references)            	✗	                        ~0.2 GB
+# Other Assays	            ✓ (Nanostring)	            ✗	                        ~1 GB
+# Metadata	                ✓ (full)	                  ✓ (reduced)	              Minimal
+# Reductions	              ✗	                          ✗	                          -
+
+
+
+```
+
+```{r}
+
+```
