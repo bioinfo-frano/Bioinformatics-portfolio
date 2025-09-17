@@ -48,7 +48,7 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 ---
 
 
-# Mouse Spatial transcriptomics Pipeline
+# Spatial transcriptomics Pipeline
 
 
 ## R pipeline of 10X Genomics Visium dataset from mouse brain slice
@@ -62,7 +62,7 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 - Brain region annotation (anatomical annotation/labeling)
 - Flextable of highly expressed genes per brain region
 
-**R Quarto Document:** 
+**R Quarto Document:**
 The main analysis is implemented in a single R Quarto file located in the `spatial_mouse_brain/` directory:  
 [`spatial_mouse_brain/260225_Spatial_Mouse_Brain_Coronal_10x.qmd`](spatial_mouse_brain/260225_Spatial_Mouse_Brain_Coronal_10x.qmd)
 
@@ -86,6 +86,11 @@ The following figures provide visual summaries of the spatial transcriptomics an
 - **Table: Top 5 Predictive Genes per Brain Region (AUC Ranking)**  
   [Top marker genes per region](spatial_mouse_brain/ft_markers_brainregions_Top5_predictive_genes_table.png)
 
+
+## R pipeline of CosMx Nanostring dataset from human pancreas slice
+
+### Processes
+  
 
 ---
 
