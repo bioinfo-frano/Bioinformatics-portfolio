@@ -44,6 +44,9 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 
 **R Script:** [`bulk_RNAseq_count_matrix_DESeq2.R`](bulk_RNAseq_count_matrix_DESeq2.R)
 
+**Volcano plot: Upregulated genes in liver (red) and muscle (blue) cells**
+![volcano plot](Liver_up_volcano_plot.jpg)
+
 
 ---
 
@@ -51,7 +54,7 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 # Spatial transcriptomics Pipeline
 
 
-## R pipeline of 10X Genomics Visium dataset from mouse brain slice
+## 1. R pipeline of 10X Genomics Visium dataset from mouse brain slice
 
 ### Processes
 - Spatial data loading and quality control
@@ -62,7 +65,7 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 - Brain region annotation (anatomical annotation/labeling)
 - Flextable of highly expressed genes per brain region
 
-**R Quarto Document:**
+**R Quarto Document:** 
 The main analysis is implemented in a single R Quarto file located in the `spatial_mouse_brain/` directory:  
 [`spatial_mouse_brain/260225_Spatial_Mouse_Brain_Coronal_10x.qmd`](spatial_mouse_brain/260225_Spatial_Mouse_Brain_Coronal_10x.qmd)
 
@@ -87,10 +90,50 @@ The following figures provide visual summaries of the spatial transcriptomics an
   [Top marker genes per region](spatial_mouse_brain/ft_markers_brainregions_Top5_predictive_genes_table.png)
 
 
-## R pipeline of CosMx Nanostring dataset from human pancreas slice
+## 2. R pipeline of CosMx Nanostring dataset from human pancreas slice
+
+### Overall description from Nanostring website
+
+<https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-human-pancreas-ffpe-dataset/>
+
+"With CosMx™ Spatial Molecular Imager (SMI) we characterized human pancreas FFPE tissue with a 18,946 plex pre-commercial version of our CosMx Human Whole Transcriptome panel. 
+This pre-commercial whole transcriptome panel showcases the highest plex of any spatial imager. 
+With over 18,946 genes, this RNA panel offers researchers the ability to analyze the entire transcriptome at true single cell level at the highest plex."
+
+In the above website, read the information and click on 'DOWNLOAD DATA'. Fill the form and wait that the 'Pancreas-CosMx-WTx-FlatFiles.zip' (dataset) downwloads completely.
 
 ### Processes
+1.  Import CosMx dataset into AWS-EC2 and decompress it
+2.  Load the CosMx dataset into RStudio Server (continue by creating seurat object, preprocessing, etc).
+3.  Visualizations: UMAP and tissue/cell type characterization
+4.  Tabular visualization of exportable file
+5.  Convert seurat object metadata in H5AD
+
+**R Quarto Document:** 
+The main analysis is implemented in a single R Quarto file located in the `proj6_pancreas_human_CosMx_figs/` directory:
+
+[`proj6_pancreas_human_CosMx_figs/proj6_Spatial_Pancreas_doppelg_EC2_git.qmd`](proj6_pancreas_human_CosMx_figs/proj6_Spatial_Pancreas_doppelg_EC2_git.qmd)
+
+### Key Visual Outputs
+
+The following figures provide visual summaries of the spatial transcriptomics analysis of human pancreas in a single-cell manner. Cell annotation was based on cell markers from Azimuth reference: 
+<https://azimuth.hubmapconsortium.org/references/#Human%20-%20Pancreas>
+
+- **UMAP: Cell type annotation: Exocrine (ductal and acinar cells), Endocrine (alpha, beta, gamma/b/a and delta) and Interstitial (stellate, endothelial and macrophages) cells**  
+  ![UMAP: Cell types identified in human pancreas](proj6_pancreas_human_CosMx_figs/pancreas_umap_celltypes.png)
+
+- **Table: Distribution of pancreatic cell types in human**  
+  ![Table: Content and frequencies of cell types in pancreas](proj6_pancreas_human_CosMx_figs/pancreas_celltypes_table_alone1.png)
+
+- **Cell/hormone image: Zoomed visualization of pancreas slice, highlighting some endocrine cells based on the hormone they express. INS: Insuline (beta cells), GCG: Glucagon (alpha cells), GHRL: Ghrelin (epsilon cells), PPY: Pancreatic Polypeptide (gamma cells)**  
+  ![Cell/hormone: pancreatic islet cells](proj6_pancreas_human_CosMx_figs/spatial_pancreas_zoom_molecules1_legend.png)
+ 
+- **Cell/hormone image2: Zoomed visualization of pancreas slice, highlighting some of the most important hormones and some cell markers**  
+  ![Cell/hormone/markers](proj6_pancreas_human_CosMx_figs/spatial_pancreas_zoom_molecules3_legend.png)
   
+- **Tissue/Cell image: Zoomed visualization of pancreas slice, highlighting endocrine, exocrine and interstitial cell types**  
+  ![Cell/hormone/markers](proj6_pancreas_human_CosMx_figs/spatial_pancreas_celltypes_zoom_polychrom_legend.png)
+
 
 ---
 
