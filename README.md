@@ -9,7 +9,7 @@ A reproducible bash script pipeline for the analysis of matched tumor-normal FAS
 
 **Bash pipeline**: [`bash_somatic_ngs_PRJNA1156316_TN.sh`](bash_somatic_ngs_PRJNA1156316_TN.sh)
 
-**Somatic analysis report (clinically actionable) of post-filtered variants**
+**Somatic analysis report (clinically actionable) of post-filtered variants** 
 
 | Location       | Gene       | HGVSc     | HGVSp       | Consequence | Exon   |  VAF      | TLOD   | SIFT        | PolyPhen          | ClinVar            | ClinPred  | Evidence   |
 |----------------|------------|-----------|-------------|-------------|--------|-----------|--------|-------------|-------------------|--------------------|-----------|------------|
