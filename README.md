@@ -1,10 +1,34 @@
-# Repository Overview
+# Repository Overview 
 
-This repository contains curated examples of my bioinformatics work, spanning bulk RNA-seq and spatial transcriptomics analyses. Below is a brief description of each file. More files and annotations will be added shortly.
+This repository contains curated examples of my bioinformatics workflows, spanning somatic NGS, bulk RNA-seq, single-cell V(D)J profiling and spatial transcriptomics analyses. Below is a brief description of each file. More files and annotations will be added shortly.
 
+
+# Somatic NGS pipeline of matched tumor-normal pair
+
+A reproducible bash script pipeline for the analysis of matched tumor-normal FASTQ samples from colorectal cancer patient, following GATK Best Practices using the **Mutect2** variant caller and functional annotation via the Ensembl Variant Effect Predictor (VEP).
+
+**Bash pipeline**: [`bash_somatic_ngs_PRJNA1156316_TN.sh`](bash_somatic_ngs_PRJNA1156316_TN.sh)
+
+**Somatic analysis report (clinically actionable) of post-filtered variants**
+
+| Location       | Gene       | HGVSc     | HGVSp       | Consequence | Exon   |  VAF      | TLOD   | SIFT        | PolyPhen          | ClinVar            | ClinPred  | Evidence   |
+|----------------|------------|-----------|-------------|-------------|--------|-----------|--------|-------------|-------------------|--------------------|-----------|------------|
+|**1:114713909** | **NRAS**   | c.181C>A  |  p.Gln61Lys | Missense    | 3/7    | 0.154     | 318.08 | Deleterious | -                 | Pathogenic         | 0.984     | ✅ Hotspot |
+|**3:179218294** | **PIK3CA** | c.1624G>A |  p.Glu542Lys| Missense    | 10/21  | 0.277     | 1253   | Deleterious | Probably damaging | Likely pathogenic  | 0.880     | ✅ Hotspot |
+  
+  
+**Visualization of PIK3CA G>A variant with IGV (Integrative genomics viewer)**
+
+![IGV_PIK3CA_snv](IGV_PIK3CA_snv1.png)  
+
+**Visualization of NRAS C>A variant with IGV** (**NOTE**: NRAS gene is encoded on the reverse strand)   
+![IGV_NRAS_snv](IGV_NRAS_zoom_in_2_labeled.png)  
+
+---
 
 # Mouse Bulk RNA-seq Pipeline
 
+End-to-end reproducible nextflow and R pipelines designed for processing raw transcriptomic reads to differential expression
 
 ## 1. Quality Control and Trimming of `fastq.gz` Files.
 
@@ -23,7 +47,7 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 - Alignment using HISAT2
 - Identification of duplicates  
 - Feature counts
-- QC metrics (rRNA counts, strandness, raw duplicates)
+- QC metrics (rRNA counts, strandedness, raw duplicates)
 - MultiQC
 
 **Nextflow Pipeline:**
@@ -44,7 +68,7 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 
 **R Script:** [`bulk_RNAseq_count_matrix_DESeq2.R`](bulk_RNAseq_count_matrix_DESeq2.R)
 
-**Volcano plot: Upregulated genes in liver (red) and muscle (blue) cells**
+**Volcano plot: Differential expression analysis comparing Liver vs. Muscle tissue (Red: upregulated in Liver; Blue: upregulated in Muscle).**
 ![volcano plot](Liver_up_volcano_plot.jpg)
 
 
@@ -54,13 +78,14 @@ This repository contains curated examples of my bioinformatics work, spanning bu
 # Spatial transcriptomics Pipeline
 
 
-## 1. R pipeline of 10X Genomics Visium dataset from mouse brain slice
+## 1. 10X Genomics Visium Workflow (Mouse Brain Coronal Section)
+An R-based spatial analysis resolving transcriptomic architecture across histological structures.  
 
 ### Processes
 - Spatial data loading and quality control
 - Data pre-processing
 - Dimensionality reduction and clustering
-- Summary table of spots identifiers and spot amount
+- Summary table of spot identifiers and spot count
 - DEG analysis of spatial clusters
 - Brain region annotation (anatomical annotation/labeling)
 - Flextable of highly expressed genes per brain region
@@ -90,24 +115,23 @@ The following figures provide visual summaries of the spatial transcriptomics an
   [Top marker genes per region](spatial_mouse_brain/ft_markers_brainregions_Top5_predictive_genes_table.png)
 
 
-## 2. R pipeline of CosMx Nanostring dataset from human pancreas slice
+## 2. NanoString CosMx workflow (Human Pancreas FFPE)  
+
+An R-based spatial analysis of a 18,946-plex whole-transcriptome spatial dataset resolving human pancreatic architecture.
 
 ### Overall description from Nanostring website
 
 <https://nanostring.com/products/cosmx-spatial-molecular-imager/ffpe-dataset/cosmx-smi-human-pancreas-ffpe-dataset/>
 
-"With CosMx™ Spatial Molecular Imager (SMI) we characterized human pancreas FFPE tissue with a 18,946 plex pre-commercial version of our CosMx Human Whole Transcriptome panel. 
-This pre-commercial whole transcriptome panel showcases the highest plex of any spatial imager. 
-With over 18,946 genes, this RNA panel offers researchers the ability to analyze the entire transcriptome at true single cell level at the highest plex."
+**Data Source**: Publicly available Human Pancreas FFPE dataset from NanoString CosMx SMI (18,946-plex Whole Transcriptome Panel).   
+**Data Management**: Implemented automated data transfer and extraction strategies for large-scale spatial flat files on AWS EC2 instances.
 
-In the above website, read the information and click on 'DOWNLOAD DATA'. Fill the form and wait that the 'Pancreas-CosMx-WTx-FlatFiles.zip' (dataset) downwloads completely.
-
-### Processes
+### Steps
 1.  Import CosMx dataset into AWS-EC2 and decompress it
-2.  Load the CosMx dataset into RStudio Server (continue by creating seurat object, preprocessing, etc).
+2.  Load the CosMx dataset into RStudio Server (continue by creating Seurat object, preprocessing, etc).
 3.  Visualizations: UMAP and tissue/cell type characterization
 4.  Tabular visualization of exportable file
-5.  Convert seurat object metadata in H5AD
+5.  Convert Seurat object metadata in H5AD → **R/Python Interoperability**
 
 **R Quarto Document:** 
 The main analysis is implemented in a single R Quarto file located in the `proj6_pancreas_human_CosMx_figs/` directory:
@@ -125,7 +149,7 @@ The following figures provide visual summaries of the spatial transcriptomics an
 - **Table: Distribution of pancreatic cell types in human**  
   ![Table: Content and frequencies of cell types in pancreas](proj6_pancreas_human_CosMx_figs/pancreas_celltypes_table_alone1.png)
 
-- **Cell/hormone image: Zoomed visualization of pancreas slice, highlighting some endocrine cells based on the hormone they express. INS: Insuline (beta cells), GCG: Glucagon (alpha cells), GHRL: Ghrelin (epsilon cells), PPY: Pancreatic Polypeptide (gamma cells)**  
+- **Cell/hormone image: Zoomed visualization of pancreas slice, highlighting some endocrine cells based on the hormone they express. INS: Insulin (beta cells), GCG: Glucagon (alpha cells), GHRL: Ghrelin (epsilon cells), PPY: Pancreatic Polypeptide (gamma cells)**  
   ![Cell/hormone: pancreatic islet cells](proj6_pancreas_human_CosMx_figs/spatial_pancreas_zoom_molecules1_legend.png)
  
 - **Cell/hormone image2: Zoomed visualization of pancreas slice, highlighting some of the most important hormones and some cell markers**  
@@ -138,16 +162,14 @@ The following figures provide visual summaries of the spatial transcriptomics an
 ---
 
 
-# V(D)J TCR/BRC clonotype and cluster annotation analysis
+# V(D)J Single-Cell Profile Analysis (TCR/BCR)<br>clonotype and cluster annotation analysis
 
-
-## R pipeline of 10X Genomics dataset from healthy human PBMC sample
+An R-based analysis of immune receptor repertoires from healthy human PBMC samples using 10X Genomics datasets.
 
 ### Processes
 - Combination of contigs
-- Quantification of chains alleles per clone
-- Frequencies of alleles
-- Clonal visualizations
+- V(D)J chain pairing (alpha/beta for TCR; heavy/light for BCR)
+- Clonal visualizations (CDR3 clonal frequency and repertoire diversity)
 - Quantification/frequency of clones
 - Quality control analysis and cell filtering
 - Data normalization and preprocessing
@@ -163,11 +185,11 @@ The following figures provide visual summaries of the spatial transcriptomics an
 ---
 
 
-# Cloud Bioinformatics with AWS EC2 & Nextflow
+# Cloud Bioinformatics (AWS EC2)  
 
-## Setup, Execution, and Cost-Control for High-Performance FASTQ Processing
+### Setup infrastructure, Pipeline Execution, and Cost-Control for High-Performance FASTQ Processing
 
-This text-based guide documents a complete cloud bioinformatics workflow using Amazon Web Services (AWS) EC2 instances, Miniconda, and Nextflow. It includes:
+A technical protocol detailing cloud-native architecture deployment for high-performance bioinformatic processing of large-scale datasets using Amazon Web Services (AWS) EC2 instances. It includes:
 
 - Instance setup and security configuration
 - Installation of bioinformatics tools
