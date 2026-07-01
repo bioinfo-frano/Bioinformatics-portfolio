@@ -26,7 +26,7 @@ A reproducible bash script pipeline for the analysis of matched tumor-normal FAS
 
 ---
 
-# Mouse Bulk RNA-seq Pipeline
+# Mouse Bulk RNA-seq Pipeline 
 
 End-to-end reproducible nextflow and R pipelines designed for processing raw transcriptomic reads to differential expression
 
