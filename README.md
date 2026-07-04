@@ -1,6 +1,6 @@
 # Repository Overview  
 
-This repository contains curated examples of my bioinformatics workflows, spanning somatic NGS, bulk RNA-seq, single-cell V(D)J profiling and spatial transcriptomics analyses. Below is a brief description of each file. More files and annotations will be added shortly.
+This repository contains curated examples of my bioinformatics workflows, spanning somatic NGS, bulk RNA-seq, single-cell V(D)J profiling and spatial transcriptomics analyses. Below is a brief description of each file. More files and annotations will be added shortly. 
 
 
 # Somatic NGS pipeline of matched tumor-normal pair
